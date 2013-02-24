@@ -1,0 +1,15 @@
+<library path="lib/libARDrone2_H264">
+
+  <class name="smd_ardrone2/ARDrone2_H264" type="smd_ardrone2::ARDrone2_H264" base_class_type="nodelet::Nodelet">
+    <description>H264 Video Stream Decoding for the Parrot AR.Drone 2.0</description>
+  </class>
+
+</library>
+
+<library path="lib/libARDrone2_Control">
+
+  <class name="smd_ardrone2/ARDrone2_Control" type="smd_ardrone2::ARDrone2_Control" base_class_type="nodelet::Nodelet">
+    <description>Control and telemetry for the Parrot AR.Drone 2.0</description>
+  </class>
+
+</library>

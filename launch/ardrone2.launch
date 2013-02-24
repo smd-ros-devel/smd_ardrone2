@@ -1,0 +1,17 @@
+<launch>
+  <group ns="ardrone">
+    <node pkg="nodelet" type="nodelet"
+     name="ardrone2_manager" args="manager"
+     respawn="true"/>
+
+    <node pkg="nodelet" type="nodelet"
+     name="ARDrone2_H264" output="screen" respawn="true"
+     args="load ardrone2_sdsmt/ARDrone2_H264 ardrone2_manager">
+    </node>
+
+    <node pkg="nodelet" type="nodelet"
+     name="ARDrone2_Control" output="screen" respawn="true"
+     args="load ardrone2_sdsmt/ARDrone2_Control ardrone2_manager">
+    </node>
+  </group>
+</launch>

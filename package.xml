@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<package>
+  <name>smd_ardrone2</name>
+  <version>0.1.0</version>
+  <description>Standalone AR.Drone 2 Driver</description>
+
+  <maintainer email="logans@cottsay.net">Scott K Logan</maintainer>
+
+  <license>BSD</license>
+
+  <!-- Url tags are optional, but mutiple are allowed, one per tag -->
+  <!-- Optional attribute type can be: website, bugtracker, or repository -->
+  <!-- Example: -->
+  <!-- <url type="website">http://ros.org/wiki/smd_ardrone2</url> -->
+
+  <author email="logans@cottsay.net">Scott K Logan</author>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>std_srvs</build_depend>
+  <build_depend>tf</build_depend>
+  <build_depend>image_transport</build_depend>
+  <build_depend>geometry_msgs</build_depend>
+  <build_depend>nodelet</build_depend>
+  <build_depend>pluginlib</build_depend>
+  <build_depend>sensor_msgs</build_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>ffmpeg</build_depend>
+  <run_depend>std_srvs</run_depend>
+  <run_depend>tf</run_depend>
+  <run_depend>image_transport</run_depend>
+  <run_depend>geometry_msgs</run_depend>
+  <run_depend>nodelet</run_depend>
+  <run_depend>pluginlib</run_depend>
+  <run_depend>sensor_msgs</run_depend>
+  <run_depend>roscpp</run_depend>
+  <run_depend>ffmpeg</run_depend>
+
+  <export>
+    <nodelet plugin="${prefix}/nodelet_plugins.xml" />
+  </export>
+</package>
