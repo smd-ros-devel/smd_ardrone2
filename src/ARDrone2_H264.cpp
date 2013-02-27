@@ -26,7 +26,9 @@ namespace smd_ardrone2
 		sockaddr( "192.168.1.1" ),
 		sockto( 0.5 ),
 		sockcool( 0.5 ),
+		frame_id( "forward_camera" ),
 		convert_context( NULL ),
+		camera_info_man( NULL ),
 		it( NULL )
 	{
 		memset( &last_hdr, 0, sizeof( last_hdr ) );
@@ -101,10 +103,12 @@ namespace smd_ardrone2
 		ros::NodeHandle priv_nh = getPrivateNodeHandle( );
 
 		it = new image_transport::ImageTransport( nh );
+		camera_info_man = new camera_info_manager::CameraInfoManager( nh, "smd_ardrone2_camera" );
 
 		priv_nh.param( "ardrone_addr", sockaddr, (std::string)"192.168.1.1" );
 		priv_nh.param( "sock_timeout", sockto, .5 );
 		priv_nh.param( "sock_cooldown", sockcool, .5 );
+		priv_nh.param( "frame_id", frame_id, (std::string)"forward_camera" );
 
 		spin_thread = boost::thread( &ARDrone2_H264::spin, this );
 	}
@@ -176,7 +180,7 @@ namespace smd_ardrone2
 		NODELET_INFO( "ARDrone2_H264: Connected" );
 
 		NODELET_DEBUG( "ARDrone2_H264: Advertising..." );
-		image_pub = it->advertise( "image_raw", 1 );
+		camera_pub = it->advertiseCamera( "image_raw", 1 );
 
 		return true;
 	}
@@ -185,7 +189,7 @@ namespace smd_ardrone2
 	{
 		close( sockfd );
 		sockfd = -1;
-		image_pub.shutdown( );
+		camera_pub.shutdown( );
 	}
 
 	void ARDrone2_H264::spinOnce( )
@@ -322,6 +326,9 @@ namespace smd_ardrone2
 			avpicture_fill( (AVPicture *)picture_rgb, buffer, PIX_FMT_RGB24, hdr->display_width, hdr->display_height );
 
 			convert_context = sws_getCachedContext( convert_context, hdr->display_width, hdr->display_height, h264_codec_context->pix_fmt, hdr->display_width, hdr->display_height, PIX_FMT_RGB24, SWS_FAST_BILINEAR, NULL, NULL, NULL);
+
+			camera_info = camera_info_man->getCameraInfo( );
+			camera_info.header.frame_id = frame_id;
 		}
 
 		memcpy( &last_hdr, hdr, sizeof( hdr ) );
@@ -352,17 +359,19 @@ namespace smd_ardrone2
 			}
 
 			sensor_msgs::ImagePtr msg( new sensor_msgs::Image );
+			sensor_msgs::CameraInfoPtr info_msg( new sensor_msgs::CameraInfo( camera_info ) );
 
 			msg->header.stamp = ros::Time::now( );
-			msg->header.frame_id = "forward_camera";
+			msg->header.frame_id = frame_id;
 			msg->height = picture_yuv->height;
 			msg->width = picture_yuv->width;
 			msg->encoding = "rgb8";
 			msg->is_bigendian = 0;
 			msg->step = picture_rgb->linesize[0];
 			msg->data.assign( picture_rgb->data[0], picture_rgb->data[0] + 3 * msg->width * msg->height );
+			info_msg->header.stamp = msg->header.stamp;
 
-			image_pub.publish( msg );
+			camera_pub.publish( msg, info_msg );
 
 			NODELET_DEBUG( "ARDrone2_H264: Processed frame #%d", hdr->frame_number );
 

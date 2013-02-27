@@ -4,6 +4,8 @@
 #include <ros/ros.h>
 #include <nodelet/nodelet.h>
 #include <image_transport/image_transport.h>
+#include <image_transport/camera_publisher.h>
+#include <camera_info_manager/camera_info_manager.h>
 
 #include <boost/thread.hpp>
 
@@ -139,6 +141,7 @@ namespace smd_ardrone2
 		double sockto;
 		double sockcool;
 		struct parrot_video_encapsulation last_hdr;
+		std::string frame_id;
 
 		boost::thread spin_thread;
 
@@ -148,8 +151,11 @@ namespace smd_ardrone2
 		AVFrame *picture_yuv;
 		AVFrame *picture_rgb;
 
+		sensor_msgs::CameraInfo camera_info;
+
+		camera_info_manager::CameraInfoManager *camera_info_man;
 		image_transport::ImageTransport *it;
-		image_transport::Publisher image_pub;
+		image_transport::CameraPublisher camera_pub;
 	};
 }
 

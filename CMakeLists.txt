@@ -4,7 +4,7 @@ project(smd_ardrone2)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS geometry_msgs image_transport nodelet pluginlib roscpp sensor_msgs std_srvs tf)
+find_package(catkin REQUIRED COMPONENTS camera_info_manager geometry_msgs image_transport nodelet pluginlib roscpp sensor_msgs std_srvs tf)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -51,7 +51,7 @@ pkg_check_modules(SWSCALE REQUIRED libswscale)
 catkin_package(
    INCLUDE_DIRS include
    LIBRARIES ARDrone2_Control ARDrone2_H264
-   CATKIN_DEPENDS geometry_msgs image_transport nodelet pluginlib roscpp sensor_msgs std_srvs tf
+   CATKIN_DEPENDS camera_info_manager geometry_msgs image_transport nodelet pluginlib roscpp sensor_msgs std_srvs tf
 #  DEPENDS system_lib
 )
 

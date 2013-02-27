@@ -1,17 +1,28 @@
 <launch>
-  <group ns="ardrone">
+  <!-- I wish we didn't have to use the slash at the front of the
+       namespace, but I cant find a way to load the forward_camera
+       nodelets into a nodelet manager in the previous namespace -->
+  <group ns="/$(env ROBOT)">
     <node pkg="nodelet" type="nodelet"
      name="ardrone2_manager" args="manager"
      respawn="true"/>
 
     <node pkg="nodelet" type="nodelet"
-     name="ARDrone2_H264" output="screen" respawn="true"
-     args="load ardrone2_sdsmt/ARDrone2_H264 ardrone2_manager">
+     name="smd_ardrone2_control" output="screen" respawn="true"
+     args="load smd_ardrone2/ARDrone2_Control /$(env ROBOT)/ardrone2_manager">
     </node>
 
-    <node pkg="nodelet" type="nodelet"
-     name="ARDrone2_Control" output="screen" respawn="true"
-     args="load ardrone2_sdsmt/ARDrone2_Control ardrone2_manager">
-    </node>
+    <group ns="camera">
+      <node pkg="nodelet" type="nodelet"
+       name="smd_ardrone2_camera" output="screen" respawn="true"
+       args="load smd_ardrone2/ARDrone2_H264 /$(env ROBOT)/ardrone2_manager">
+      </node>
+
+      <node pkg="nodelet" type="nodelet"
+       name="image_rect" output="screen" respawn="true"
+       args="load image_proc/rectify /$(env ROBOT)/ardrone2_manager">
+        <remap from="image_mono" to="image_raw"/>
+      </node>
+    </group>
   </group>
 </launch>
