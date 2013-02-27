@@ -492,6 +492,7 @@ namespace smd_ardrone2
 		bool TakeoffCB( std_srvs::Empty::Request &, std_srvs::Empty::Response & );
 		bool LandCB( std_srvs::Empty::Request &, std_srvs::Empty::Response & );
 		bool TrimCB( std_srvs::Empty::Request &, std_srvs::Empty::Response & );
+		bool ResetCB( std_srvs::Empty::Request &, std_srvs::Empty::Response & );
 		void processNavdata( const struct navdata &hdr );
 		void processNavdataOptions( const std::vector<struct navdata_option> &opts );
 		bool processChecksum( const struct navdata &hdr, const std::vector<struct navdata_option> &opts ) const;
@@ -518,6 +519,7 @@ namespace smd_ardrone2
 		ros::ServiceServer takeoff_ser;
 		ros::ServiceServer land_ser;
 		ros::ServiceServer trim_ser;
+		ros::ServiceServer reset_ser;
 	};
 }
 

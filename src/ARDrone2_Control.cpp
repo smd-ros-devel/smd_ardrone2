@@ -202,6 +202,8 @@ namespace smd_ardrone2
 			land_ser.shutdown( );
 		if( trim_ser )
 			trim_ser.shutdown( );
+		if( reset_ser )
+			reset_ser.shutdown( );
 	}
 
 	void ARDrone2_Control::spinOnce( )
@@ -376,6 +378,8 @@ namespace smd_ardrone2
 			land_ser = nh.advertiseService( "land", &ARDrone2_Control::LandCB, this );
 		if( !trim_ser )
 			trim_ser = nh.advertiseService( "flat_trim", &ARDrone2_Control::TrimCB, this );
+		if( !reset_ser )
+			reset_ser = nh.advertiseService( "reset", &ARDrone2_Control::ResetCB, this );
 
 		last_hdr = hdr;
 	}
@@ -494,6 +498,20 @@ namespace smd_ardrone2
 		{
 			boost::mutex::scoped_lock scoped_lock( global_send );
 			buf << "AT*FTRIM=" << ++sequence << '\r';
+			if( send( sockfd_out, buf.str( ).c_str( ), buf.str( ).length( ), 0 ) == (signed)buf.str( ).length( ) )
+				return true;
+		}
+		return false;
+	}
+
+	bool ARDrone2_Control::ResetCB( std_srvs::Empty::Request &, std_srvs::Empty::Response & )
+	{
+		NODELET_INFO( "ARDrone2_Control: Sending Emergency Toggle" );
+		std::stringstream buf;
+		if( sockfd_out != -1 )
+		{
+			boost::mutex::scoped_lock scoped_lock( global_send );
+			buf << "AT*REF=" << ++sequence << ',' << ( 290717696 | ( 1 << 8 ) ) << '\r';
 			if( send( sockfd_out, buf.str( ).c_str( ), buf.str( ).length( ), 0 ) == (signed)buf.str( ).length( ) )
 				return true;
 		}
