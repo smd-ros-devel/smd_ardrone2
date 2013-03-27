@@ -1,6 +1,11 @@
 #ifndef _ARDrone2_Control_hpp
 #define _ARDrone2_Control_hpp
 
+#include "smd_ardrone2/DroneConfig.h"
+#include "smd_ardrone2/DroneLEDAnimate.h"
+#include "smd_ardrone2/DroneAnimate.h"
+#include "smd_ardrone2/DroneCamToggle.h"
+
 #include <ros/ros.h>
 #include <nodelet/nodelet.h>
 #include <geometry_msgs/Twist.h>
@@ -80,6 +85,29 @@ namespace smd_ardrone2
 		NAVDATA_WIFI_TAG,
 		NAVDATA_ZIMMU_3000_TAG,
 		NAVDATA_CKS_TAG = 0xFFFF
+	};
+
+	const int32_t MAYDAY_TIMEOUT[] = {
+		1000,  // ARDRONE_ANIM_PHI_M30_DEG
+		1000,  // ARDRONE_ANIM_PHI_30_DEG
+		1000,  // ARDRONE_ANIM_THETA_M30_DEG
+		1000,  // ARDRONE_ANIM_THETA_30_DEG
+		1000,  // ARDRONE_ANIM_THETA_20DEG_YAW_200DEG
+		1000,  // ARDRONE_ANIM_THETA_20DEG_YAW_M200DEG
+		5000,  // ARDRONE_ANIM_TURNAROUND
+		5000,  // ARDRONE_ANIM_TURNAROUND_GODOWN
+		2000,  // ARDRONE_ANIM_YAW_SHAKE
+		5000,  // ARDRONE_ANIM_YAW_DANCE
+		5000,  // ARDRONE_ANIM_PHI_DANCE
+		5000,  // ARDRONE_ANIM_THETA_DANCE
+		5000,  // ARDRONE_ANIM_VZ_DANCE
+		5000,  // ARDRONE_ANIM_WAVE
+		5000,  // ARDRONE_ANIM_PHI_THETA_MIXED
+		5000,  // ARDRONE_ANIM_DOUBLE_PHI_THETA_MIXED
+		15,  // ARDRONE_ANIM_FLIP_AHEAD
+		15,  // ARDRONE_ANIM_FLIP_BEHIND
+		15,  // ARDRONE_ANIM_FLIP_LEFT
+		15,  // ARDRONE_ANIM_FLIP_RIGHT
 	};
 
 	struct navdata
@@ -493,6 +521,10 @@ namespace smd_ardrone2
 		bool LandCB( std_srvs::Empty::Request &, std_srvs::Empty::Response & );
 		bool TrimCB( std_srvs::Empty::Request &, std_srvs::Empty::Response & );
 		bool ResetCB( std_srvs::Empty::Request &, std_srvs::Empty::Response & );
+		bool requestConfig( smd_ardrone2::DroneConfig::Request &, smd_ardrone2::DroneConfig::Response & );
+		bool LEDAnimCB( smd_ardrone2::DroneLEDAnimate::Request &, smd_ardrone2::DroneLEDAnimate::Response & );
+		bool AnimCB( smd_ardrone2::DroneAnimate::Request &, smd_ardrone2::DroneAnimate::Response & );
+		bool CamToggleCB( smd_ardrone2::DroneCamToggle::Request &, smd_ardrone2::DroneCamToggle::Response & );
 		void processNavdata( const struct navdata &hdr );
 		void processNavdataOptions( const std::vector<struct navdata_option> &opts );
 		bool processChecksum( const struct navdata &hdr, const std::vector<struct navdata_option> &opts ) const;
@@ -511,6 +543,8 @@ namespace smd_ardrone2
 
 		boost::thread spin_thread;
 		boost::mutex global_send;
+		boost::mutex global_config;
+		boost::mutex config_ack;
 
 		ros::Subscriber twist_sub;
 		ros::Publisher imu_pub;
@@ -520,6 +554,10 @@ namespace smd_ardrone2
 		ros::ServiceServer land_ser;
 		ros::ServiceServer trim_ser;
 		ros::ServiceServer reset_ser;
+		ros::ServiceServer cfg_ser;
+		ros::ServiceServer ledanim_ser;
+		ros::ServiceServer anim_ser;
+		ros::ServiceServer cam_toggle_ser;
 	};
 }
 

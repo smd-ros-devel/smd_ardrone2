@@ -4,7 +4,7 @@ project(smd_ardrone2)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS camera_info_manager geometry_msgs image_transport nodelet pluginlib roscpp sensor_msgs std_srvs tf)
+find_package(catkin REQUIRED COMPONENTS camera_info_manager geometry_msgs image_transport nodelet pluginlib roscpp sensor_msgs std_srvs tf message_generation)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -29,17 +29,17 @@ pkg_check_modules(SWSCALE REQUIRED libswscale)
 # )
 
 ## Generate services in the 'srv' folder
-# add_service_files(
-#   FILES
-#   Service1.srv
-#   Service2.srv
-# )
+add_service_files(
+  FILES
+  DroneAnimate.srv
+  DroneCamToggle.srv
+  DroneConfig.srv
+  DroneLEDAnimate.srv
+)
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   geometry_msgs#   sensor_msgs
-# )
+generate_messages(
+)
 
 ###################################################
 ## Declare things to be passed to other projects ##

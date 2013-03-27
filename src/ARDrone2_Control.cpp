@@ -5,7 +5,7 @@
 #include <tf/transform_datatypes.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/Range.h>
-#include <geometry_msgs/Twist.h>
+#include <geometry_msgs/TwistStamped.h>
 
 #include <boost/thread.hpp>
 
@@ -51,8 +51,8 @@ namespace smd_ardrone2
 		ros::NodeHandle priv_nh = getPrivateNodeHandle( );
 
 		priv_nh.param( "ardrone_addr", sockaddr, (std::string)"192.168.1.1" );
-		priv_nh.param( "sock_timeout", sockto, .5 );
-		priv_nh.param( "sock_cooldown", sockcool, .5 );
+		priv_nh.param( "sock_timeout", sockto, 0.5 );
+		priv_nh.param( "sock_cooldown", sockcool, 0.5 );
 
 		spin_thread = boost::thread( &ARDrone2_Control::spin, this );
 	}
@@ -75,7 +75,7 @@ namespace smd_ardrone2
 
 		if( ( ret = getaddrinfo( sockaddr.c_str( ), "5554", &hints, &servinfo ) ) != 0 )
 		{
-			NODELET_DEBUG( "ARDrone2_Control: Failed to connect: %s", gai_strerror( ret ) );
+			NODELET_DEBUG( "ARDrone2_Control: Failed to connect to inbound: %s", gai_strerror( ret ) );
 			return false;
 		}
 
@@ -116,15 +116,15 @@ namespace smd_ardrone2
 
 		freeaddrinfo( servinfo );
 
-		if ( p == NULL )
+		if( p == NULL )
 		{
-			NODELET_ERROR( "ARDrone2_Control: Connection failure" );
+			NODELET_ERROR( "ARDrone2_Control: Inbound connection failure" );
 			return false;
 		}
 
 		if( ( ret = getaddrinfo( sockaddr.c_str( ), "5556", &hints, &servinfo ) ) != 0 )
 		{
-			NODELET_DEBUG( "ARDrone2_Control: Failed to connect: %s", gai_strerror( ret ) );
+			NODELET_DEBUG( "ARDrone2_Control: Failed to connect to outbound: %s", gai_strerror( ret ) );
 			return false;
 		}
 
@@ -165,9 +165,9 @@ namespace smd_ardrone2
 
 		freeaddrinfo( servinfo );
 
-		if ( p == NULL )
+		if( p == NULL )
 		{
-			NODELET_ERROR( "ARDrone2_Control: Connection failure" );
+			NODELET_ERROR( "ARDrone2_Control: Outbound connection failure" );
 			disconnect( );
 			return false;
 		}
@@ -178,6 +178,10 @@ namespace smd_ardrone2
 			disconnect( );
 			return false;
 		}
+
+		sequence = 0;
+
+		NODELET_INFO( "ARDrone2_Control: Connected" );
 
 		return true;
 	}
@@ -204,6 +208,14 @@ namespace smd_ardrone2
 			trim_ser.shutdown( );
 		if( reset_ser )
 			reset_ser.shutdown( );
+		if( cfg_ser )
+			cfg_ser.shutdown( );
+		if( ledanim_ser )
+			ledanim_ser.shutdown( );
+		if( anim_ser )
+			anim_ser.shutdown( );
+		if( cam_toggle_ser )
+			cam_toggle_ser.shutdown( );
 	}
 
 	void ARDrone2_Control::spinOnce( )
@@ -319,10 +331,12 @@ namespace smd_ardrone2
 		if( sockfd_out != -1 )
 		{
 			sequence = 0;
-			boost::mutex::scoped_lock scoped_lock( global_send );
+			boost::mutex::scoped_lock scoped_lock( global_config );
+			boost::mutex::scoped_lock scoped_lock2( global_send );
 			buf << "AT*CONFIG=" << ++sequence << ",\"general:navdata_demo\",\"FALSE\"" << '\r';
 			buf << "AT*CONFIG=" << ++sequence << ",\"general:navdata_options\",\"" << 0 << "\"" << '\r';
 			buf << "AT*CONFIG=" << ++sequence << ",\"video:video_codec\",\"H264_360P_CODEC\"" << '\r';
+			buf << "AT*CONFIG=" << ++sequence << ",\"control:altitude_max\",\"3000\"" << '\r';
 			if( send( sockfd_out, buf.str( ).c_str( ), buf.str( ).length( ), 0 ) == (signed)buf.str( ).length( ) )
 				return true;
 		}
@@ -338,7 +352,10 @@ namespace smd_ardrone2
 			boost::mutex::scoped_lock scoped_lock( global_send );
 			buf << "AT*CTRL=" << ++sequence << ',' << 5 << ',' << 0 << '\r';
 			if( send( sockfd_out, buf.str( ).c_str( ), buf.str( ).length( ), 0 ) == (signed)buf.str( ).length( ) )
+			{
+				config_ack.unlock( );
 				return true;
+			}
 		}
 		return false;
 	}
@@ -347,20 +364,20 @@ namespace smd_ardrone2
 	{
 		ros::NodeHandle nh = getNodeHandle( );
 
-		if( hdr.ardrone_state & ARDRONE_COMMAND_MASK )
-		{
-			NODELET_DEBUG( "ARDrone2_Control: Drone has exited - sending ack" );
-			if( !sendConfigAck( ) )
-			{
-				NODELET_WARN( "ARDrone2_Control: Failed to send config ack" );
-			}
-		}
-		else if( hdr.ardrone_state & ARDRONE_NAVDATA_BOOTSTRAP )
+		if( hdr.ardrone_state & ARDRONE_NAVDATA_BOOTSTRAP )
 		{
 			NODELET_DEBUG( "ARDrone2_Control: Drone is in boostrap - sending config" );
 			if( !sendConfig( ) )
 			{
 				NODELET_WARN( "ARDrone2_Control: Failed to send config" );
+			}
+		}
+		else if( hdr.ardrone_state & ARDRONE_COMMAND_MASK )
+		{
+			NODELET_DEBUG( "ARDrone2_Control: Drone is acknoledging configuration - sending ack" );
+			if( !sendConfigAck( ) )
+			{
+				NODELET_WARN( "ARDrone2_Control: Failed to send config ack" );
 			}
 		}
 
@@ -371,7 +388,7 @@ namespace smd_ardrone2
 		if( !sonar_pub )
 			sonar_pub = nh.advertise<sensor_msgs::Range>( "height", 1 );
 		if( !twist_pub )
-			twist_pub = nh.advertise<geometry_msgs::Twist>( "vel", 1 );
+			twist_pub = nh.advertise<geometry_msgs::TwistStamped>( "vel", 1 );
 		if( !takeoff_ser )
 			takeoff_ser = nh.advertiseService( "takeoff", &ARDrone2_Control::TakeoffCB, this );
 		if( !land_ser )
@@ -380,6 +397,14 @@ namespace smd_ardrone2
 			trim_ser = nh.advertiseService( "flat_trim", &ARDrone2_Control::TrimCB, this );
 		if( !reset_ser )
 			reset_ser = nh.advertiseService( "reset", &ARDrone2_Control::ResetCB, this );
+		if( !cfg_ser )
+			cfg_ser = nh.advertiseService( "req_cfg", &ARDrone2_Control::requestConfig, this );
+		if( !ledanim_ser )
+			ledanim_ser = nh.advertiseService( "led_animate", &ARDrone2_Control::LEDAnimCB, this );
+		if( !anim_ser )
+			anim_ser = nh.advertiseService( "animate", &ARDrone2_Control::AnimCB, this );
+		if( !cam_toggle_ser )
+			cam_toggle_ser = nh.advertiseService( "toggle_cam", &ARDrone2_Control::CamToggleCB, this );
 
 		last_hdr = hdr;
 	}
@@ -418,14 +443,14 @@ namespace smd_ardrone2
 							sonar_pub.publish( msg );
 						}
 						{
-							geometry_msgs::TwistPtr msg( new geometry_msgs::Twist );
+							geometry_msgs::TwistStampedPtr msg( new geometry_msgs::TwistStamped );
 
-							//msg->header.stamp = ros::Time::now( );
-							//msg->header.frame_id = "imu";
+							msg->header.stamp = ros::Time::now( );
+							msg->header.frame_id = "base_link";
 
-							msg->linear.x = opts[i].data.demo_payload.vx / 1000.0;
-							msg->linear.y = opts[i].data.demo_payload.vy / 1000.0;
-							msg->linear.z = opts[i].data.demo_payload.vz / 1000.0;
+							msg->twist.linear.x = opts[i].data.demo_payload.vx / 1000.0;
+							msg->twist.linear.y = opts[i].data.demo_payload.vy / 1000.0;
+							msg->twist.linear.z = opts[i].data.demo_payload.vz / 1000.0;
 
 							twist_pub.publish( msg );
 						}
@@ -516,5 +541,192 @@ namespace smd_ardrone2
 				return true;
 		}
 		return false;
+	}
+
+	bool ARDrone2_Control::LEDAnimCB( smd_ardrone2::DroneLEDAnimate::Request &msg, smd_ardrone2::DroneLEDAnimate::Response & )
+ 	{
+		NODELET_DEBUG( "ARDrone2_Control: Sending LED Animation Config" );
+ 		std::stringstream buf;
+ 		if( sockfd_out != -1 )
+ 		{
+			global_config.lock( );
+			global_send.lock( );
+			buf << "AT*CONFIG=" << ++sequence << ",\"leds:leds_anim\",\"" << msg.num << ',' << *(int *)&msg.freq << ',' << msg.dur << '\"' << '\r';
+			if( send( sockfd_out, buf.str( ).c_str( ), buf.str( ).length( ), 0 ) == (signed)buf.str( ).length( ) )
+			{
+				global_send.unlock( );
+				config_ack.lock( );
+				config_ack.lock( );
+				config_ack.unlock( );
+				global_config.unlock( );
+
+				return true;
+			}
+			global_send.unlock( );
+			global_config.unlock( );
+		}
+		return false;
+	}
+
+	bool ARDrone2_Control::AnimCB( smd_ardrone2::DroneAnimate::Request &msg, smd_ardrone2::DroneAnimate::Response & )
+	{
+		NODELET_DEBUG( "ARDrone2_Control: Sending Animation Config" );
+		std::stringstream buf;
+		if( sockfd_out != -1 )
+		{
+			if( msg.dur < 0 && msg.num < sizeof(MAYDAY_TIMEOUT) / sizeof( MAYDAY_TIMEOUT[0] ) )
+				msg.dur = MAYDAY_TIMEOUT[msg.num];
+			global_config.lock( );
+			global_send.lock( );
+			buf << "AT*CONFIG=" << ++sequence << ",\"control:flight_anim\",\"" << msg.num << ',' << msg.dur << '\"' << '\r';
+			if( send( sockfd_out, buf.str( ).c_str( ), buf.str( ).length( ), 0 ) == (signed)buf.str( ).length( ) )
+			{
+				global_send.unlock( );
+				config_ack.lock( );
+				config_ack.lock( );
+				config_ack.unlock( );
+				global_config.unlock( );
+
+				return true;
+			}
+			global_send.unlock( );
+			global_config.unlock( );
+		}
+		return false;
+	}
+
+	bool ARDrone2_Control::CamToggleCB( smd_ardrone2::DroneCamToggle::Request &msg, smd_ardrone2::DroneCamToggle::Response & )
+	{
+		NODELET_DEBUG( "ARDrone2_Control: Sending Camera Toggle Config" );
+		std::stringstream buf;
+		if( sockfd_out != -1 )
+		{
+			global_config.lock( );
+			global_send.lock( );
+			buf << "AT*CONFIG=" << ++sequence << ",\"video:video_channel\",\"" << (unsigned int)msg.num << '\"' << '\r';
+			if( send( sockfd_out, buf.str( ).c_str( ), buf.str( ).length( ), 0 ) == (signed)buf.str( ).length( ) )
+			{
+				global_send.unlock( );
+				config_ack.lock( );
+				config_ack.lock( );
+				config_ack.unlock( );
+				global_config.unlock( );
+
+				return true;
+			}
+			global_send.unlock( );
+			global_config.unlock( );
+		}
+		return false;
+	}
+
+	bool ARDrone2_Control::requestConfig( smd_ardrone2::DroneConfig::Request &, smd_ardrone2::DroneConfig::Response &ret_msg )
+	{
+		NODELET_DEBUG( "ARDrone2_Control: Connecting to configuration port" );
+
+		int sockfd_cfg;
+		int ret;
+		struct addrinfo hints, *servinfo = NULL, *p = NULL;
+		struct timeval tv;
+
+		memset( &hints, 0, sizeof hints );
+		hints.ai_family = AF_INET;		// IPv4 Only (for now)
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_protocol = IPPROTO_TCP;
+
+		tv.tv_sec   = (int)sockto;
+		tv.tv_usec  = ( sockto - tv.tv_sec ) * 1000000;
+
+		if( ( ret = getaddrinfo( sockaddr.c_str( ), "5559", &hints, &servinfo ) ) != 0 )
+		{
+			NODELET_DEBUG( "ARDrone2_Control: Failed to connect to config: %s", gai_strerror( ret ) );
+			return false;
+		}
+
+		for( p = servinfo; p != NULL; p = p->ai_next )
+		{
+			if( ( sockfd_cfg = socket( p->ai_family, p->ai_socktype, p->ai_protocol ) ) == -1 )
+			{
+				NODELET_DEBUG( "ARDrone2_Control: Skipping invalid socket" );
+				continue;
+			}
+
+			if( setsockopt( sockfd_cfg, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof( tv ) ) )
+			{
+				NODELET_DEBUG( "ARDrone2_Control: Failed to set socket receive timeout" );
+				close( sockfd_cfg );
+				sockfd_cfg = -1;
+				continue;
+			}
+
+			if( setsockopt( sockfd_cfg, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof( tv ) ) )
+			{
+				NODELET_DEBUG( "ARDrone2_Control: Failed to set socket send timeout" );
+				close( sockfd_cfg );
+				sockfd_cfg = -1;
+				continue;
+			}
+
+			if ( ::connect( sockfd_cfg, p->ai_addr, p->ai_addrlen ) == -1 )
+			{
+				NODELET_DEBUG( "ARDrone2_Control: Connection attempt failed" );
+				close( sockfd_cfg );
+				sockfd_cfg = -1;
+				continue;
+			}
+
+			break;
+		}
+
+		freeaddrinfo( servinfo );
+
+		if( p == NULL )
+		{
+			NODELET_ERROR( "ARDrone2_Control: Config connection failure" );
+			close( sockfd_cfg );
+			sockfd_cfg = -1;
+			return false;
+		}
+
+		NODELET_DEBUG( "ARDrone2_Control: Sending config request" );
+		std::stringstream buf;
+		if( sockfd_out != -1 )
+		{
+			global_config.lock( );
+			global_send.lock( );
+			buf << "AT*CTRL=" << ++sequence << ',' << 4 << ',' << 0 << '\r';
+			if( send( sockfd_out, buf.str( ).c_str( ), buf.str( ).length( ), 0 ) == (signed)buf.str( ).length( ) )
+			{
+				global_send.unlock( );
+				config_ack.lock( );
+				config_ack.lock( );
+				config_ack.unlock( );
+
+				int bytes;
+				char cfg[32767];
+				char *curr_cfg = cfg;
+				while( ( bytes = recv( sockfd_cfg, curr_cfg, sizeof( cfg ) - ( curr_cfg - cfg ), 0 ) ) > 0 )
+				{
+					curr_cfg += bytes;
+				}
+				if( curr_cfg == cfg )
+				{
+					NODELET_WARN( "ARDrone2_Control: Timeout receiving configuration" );
+					close( sockfd_cfg );
+					return false;
+				}
+				ret_msg.cfg = cfg;
+
+				global_config.unlock( );
+
+				close( sockfd_cfg );
+
+				return true;
+			}
+			global_send.unlock( );
+			global_config.unlock( );
+		}
+		return false;
+		close( sockfd_cfg );
 	}
 }
