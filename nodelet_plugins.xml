@@ -13,3 +13,11 @@
   </class>
 
 </library>
+
+<library path="lib/libARDrone2_Helper">
+
+  <class name="smd_ardrone2/ARDrone2_Helper" type="smd_ardrone2::ARDrone2_Helper" base_class_type="nodelet::Nodelet">
+    <description>Helper nodelet for calling common services with std_srvs::Empty</description>
+  </class>
+
+</library>

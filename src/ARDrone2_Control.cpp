@@ -214,8 +214,8 @@ namespace smd_ardrone2
 			ledanim_ser.shutdown( );
 		if( anim_ser )
 			anim_ser.shutdown( );
-		if( cam_toggle_ser )
-			cam_toggle_ser.shutdown( );
+		if( set_cam_ser )
+			set_cam_ser.shutdown( );
 	}
 
 	void ARDrone2_Control::spinOnce( )
@@ -336,7 +336,7 @@ namespace smd_ardrone2
 			buf << "AT*CONFIG=" << ++sequence << ",\"general:navdata_demo\",\"FALSE\"" << '\r';
 			buf << "AT*CONFIG=" << ++sequence << ",\"general:navdata_options\",\"" << 0 << "\"" << '\r';
 			buf << "AT*CONFIG=" << ++sequence << ",\"video:video_codec\",\"H264_360P_CODEC\"" << '\r';
-			buf << "AT*CONFIG=" << ++sequence << ",\"control:altitude_max\",\"3000\"" << '\r';
+			buf << "AT*CONFIG=" << ++sequence << ",\"control:altitude_max\",\"6000\"" << '\r';
 			if( send( sockfd_out, buf.str( ).c_str( ), buf.str( ).length( ), 0 ) == (signed)buf.str( ).length( ) )
 				return true;
 		}
@@ -403,8 +403,8 @@ namespace smd_ardrone2
 			ledanim_ser = nh.advertiseService( "led_animate", &ARDrone2_Control::LEDAnimCB, this );
 		if( !anim_ser )
 			anim_ser = nh.advertiseService( "animate", &ARDrone2_Control::AnimCB, this );
-		if( !cam_toggle_ser )
-			cam_toggle_ser = nh.advertiseService( "toggle_cam", &ARDrone2_Control::CamToggleCB, this );
+		if( !set_cam_ser )
+			set_cam_ser = nh.advertiseService( "set_cam", &ARDrone2_Control::SetCamCB, this );
 
 		last_hdr = hdr;
 	}
@@ -595,9 +595,9 @@ namespace smd_ardrone2
 		return false;
 	}
 
-	bool ARDrone2_Control::CamToggleCB( smd_ardrone2::DroneCamToggle::Request &msg, smd_ardrone2::DroneCamToggle::Response & )
+	bool ARDrone2_Control::SetCamCB( smd_ardrone2::DroneSetCam::Request &msg, smd_ardrone2::DroneSetCam::Response & )
 	{
-		NODELET_DEBUG( "ARDrone2_Control: Sending Camera Toggle Config" );
+		NODELET_DEBUG( "ARDrone2_Control: Sending Camera Config" );
 		std::stringstream buf;
 		if( sockfd_out != -1 )
 		{

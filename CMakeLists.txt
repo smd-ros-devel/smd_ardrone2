@@ -32,9 +32,9 @@ pkg_check_modules(SWSCALE REQUIRED libswscale)
 add_service_files(
   FILES
   DroneAnimate.srv
-  DroneCamToggle.srv
   DroneConfig.srv
   DroneLEDAnimate.srv
+  DroneSetCam.srv
 )
 
 ## Generate added messages and services with any dependencies listed here
@@ -74,6 +74,9 @@ add_library(ARDrone2_Control
 add_library(ARDrone2_H264
   src/ARDrone2_H264.cpp
 )
+add_library(ARDrone2_Helper
+  src/ARDrone2_Helper.cpp
+)
 
 ## Declare a cpp executable
 # add_executable(smd_ardrone2_node src/smd_ardrone2_node.cpp)
@@ -91,6 +94,9 @@ target_link_libraries(ARDrone2_H264
   ${AVFORMAT_LIBRARIES}
   ${SWSCALE_LIBRARIES}
 )
+target_link_libraries(ARDrone2_Helper
+  ${catkin_LIBRARIES}
+)
 
 #############
 ## Install ##
@@ -104,7 +110,7 @@ target_link_libraries(ARDrone2_H264
 # )
 
 ## Mark executables and/or libraries for installation
-install(TARGETS ARDrone2_Control ARDrone2_H264
+install(TARGETS ARDrone2_Control ARDrone2_H264 ARDrone2_Helper
 # ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 # RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
@@ -121,6 +127,7 @@ install(DIRECTORY include/${PROJECT_NAME}/
 install(FILES
   nodelet_plugins.xml
   launch/ardrone2.launch
+  launch/ardrone2_with_helper.launch
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )
 

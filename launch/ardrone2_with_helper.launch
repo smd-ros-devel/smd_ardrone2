@@ -1,0 +1,11 @@
+<launch>
+
+  <include file="$(find smd_ardrone2)/launch/ardrone2.launch" />
+
+  <group ns="/$(env ROBOT)">
+    <node pkg="nodelet" type="nodelet"
+     name="smd_ardrone2_helper" output="screen" respawn="true"
+     args="load smd_ardrone2/ARDrone2_Helper /$(env ROBOT)/ardrone2_manager">
+    </node>
+  </group>
+</launch>

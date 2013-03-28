@@ -4,7 +4,7 @@
 #include "smd_ardrone2/DroneConfig.h"
 #include "smd_ardrone2/DroneLEDAnimate.h"
 #include "smd_ardrone2/DroneAnimate.h"
-#include "smd_ardrone2/DroneCamToggle.h"
+#include "smd_ardrone2/DroneSetCam.h"
 
 #include <ros/ros.h>
 #include <nodelet/nodelet.h>
@@ -524,7 +524,7 @@ namespace smd_ardrone2
 		bool requestConfig( smd_ardrone2::DroneConfig::Request &, smd_ardrone2::DroneConfig::Response & );
 		bool LEDAnimCB( smd_ardrone2::DroneLEDAnimate::Request &, smd_ardrone2::DroneLEDAnimate::Response & );
 		bool AnimCB( smd_ardrone2::DroneAnimate::Request &, smd_ardrone2::DroneAnimate::Response & );
-		bool CamToggleCB( smd_ardrone2::DroneCamToggle::Request &, smd_ardrone2::DroneCamToggle::Response & );
+		bool SetCamCB( smd_ardrone2::DroneSetCam::Request &, smd_ardrone2::DroneSetCam::Response & );
 		void processNavdata( const struct navdata &hdr );
 		void processNavdataOptions( const std::vector<struct navdata_option> &opts );
 		bool processChecksum( const struct navdata &hdr, const std::vector<struct navdata_option> &opts ) const;
@@ -557,7 +557,7 @@ namespace smd_ardrone2
 		ros::ServiceServer cfg_ser;
 		ros::ServiceServer ledanim_ser;
 		ros::ServiceServer anim_ser;
-		ros::ServiceServer cam_toggle_ser;
+		ros::ServiceServer set_cam_ser;
 	};
 }
 
