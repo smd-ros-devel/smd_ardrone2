@@ -82,8 +82,8 @@ add_library(ARDrone2_Helper
 # add_executable(smd_ardrone2_node src/smd_ardrone2_node.cpp)
 
 ## Add dependencies to the executable
-add_dependencies(ARDrone2_Control smd_ardrone2_gensrv)
-add_dependencies(ARDrone2_Helper smd_ardrone2_gensrv)
+add_dependencies(ARDrone2_Control ${PROJECT_NAME}_gencpp)
+add_dependencies(ARDrone2_Helper ${PROJECT_NAME}_gencpp)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(ARDrone2_Control
