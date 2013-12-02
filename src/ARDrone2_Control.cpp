@@ -29,7 +29,9 @@ namespace smd_ardrone2
 		sockfd_out( -1 ),
 		sockaddr( "192.168.1.1" ),
 		sockto( 0.5 ),
-		sockcool( 0.5 )
+		sockcool( 0.5 ),
+		have_config( false ),
+		altitude_max( 3 )
 	{
 		memset( &last_hdr, 0, sizeof( last_hdr ) );
 
@@ -53,6 +55,7 @@ namespace smd_ardrone2
 		priv_nh.param( "ardrone_addr", sockaddr, (std::string)"192.168.1.1" );
 		priv_nh.param( "sock_timeout", sockto, 0.5 );
 		priv_nh.param( "sock_cooldown", sockcool, 0.5 );
+		priv_nh.param( "altitude_max", altitude_max, 3.0 );
 
 		spin_thread = boost::thread( &ARDrone2_Control::spin, this );
 	}
@@ -181,7 +184,7 @@ namespace smd_ardrone2
 
 		sequence = 0;
 
-		NODELET_INFO( "ARDrone2_Control: Connected" );
+		NODELET_INFO( "ARDrone2_Control: Initialized - Waiting for handshake" );
 
 		return true;
 	}
@@ -228,7 +231,7 @@ namespace smd_ardrone2
 		{
 			if( !connect( ) )
 			{
-				NODELET_INFO( "ARDrone2_Control: Cooling off for %fs", sockcool );
+				NODELET_INFO( "ARDrone2_Control: Cooling off for %1.1fs", sockcool );
 				usleep( sockcool * 1000000 );
 				return;
 			}
@@ -285,6 +288,8 @@ namespace smd_ardrone2
 				return;
 			}
 
+			NODELET_DEBUG( "ARDrone2_Control: Found %zu navdata options", opts.size( ) );
+
 			processNavdata( *hdr );
 			processNavdataOptions( opts );
 		}
@@ -330,13 +335,14 @@ namespace smd_ardrone2
 		std::stringstream buf;
 		if( sockfd_out != -1 )
 		{
-			sequence = 0;
+			static const uint32_t navmask = ( 1 << NAVDATA_DEMO_TAG ) | ( 1 << NAVDATA_RAW_MEASURES_TAG );
 			boost::mutex::scoped_lock scoped_lock( global_config );
 			boost::mutex::scoped_lock scoped_lock2( global_send );
 			buf << "AT*CONFIG=" << ++sequence << ",\"general:navdata_demo\",\"FALSE\"" << '\r';
-			buf << "AT*CONFIG=" << ++sequence << ",\"general:navdata_options\",\"" << 0 << "\"" << '\r';
-			buf << "AT*CONFIG=" << ++sequence << ",\"video:video_codec\",\"H264_360P_CODEC\"" << '\r';
-			buf << "AT*CONFIG=" << ++sequence << ",\"control:altitude_max\",\"6000\"" << '\r';
+			buf << "AT*CONFIG=" << ++sequence << ",\"general:navdata_options\",\"" << navmask << "\"" << '\r';
+			//buf << "AT*CONFIG=" << ++sequence << ",\"video:video_codec\",\"" << H264_360P_CODEC << '\"' << '\r';
+			buf << "AT*CONFIG=" << ++sequence << ",\"control:altitude_max\",\"" << (int)( altitude_max * 1000 + 0.5 ) << '\"' << '\r';
+			ROS_WARN_COND( buf.str( ).length( ) > 1024, "ARDrone2_Control: Configuration is over 1024 bytes (%zu)", buf.str( ).length( ) );
 			if( send( sockfd_out, buf.str( ).c_str( ), buf.str( ).length( ), 0 ) == (signed)buf.str( ).length( ) )
 				return true;
 		}
@@ -360,17 +366,38 @@ namespace smd_ardrone2
 		return false;
 	}
 
+	bool ARDrone2_Control::sendWatchdogReset( )
+	{
+		NODELET_DEBUG( "ARDrone2_Control: Sending watchdog reset" );
+		std::stringstream buf;
+		if( sockfd_out != -1 )
+		{
+			boost::mutex::scoped_lock scoped_lock( global_send );
+			buf << "AT*COMWDG=" << ++sequence << '\r';
+			if( send( sockfd_out, buf.str( ).c_str( ), buf.str( ).length( ), 0 ) == (signed)buf.str( ).length( ) )
+			{
+				config_ack.unlock( );
+				return true;
+			}
+		}
+		return false;
+	}
+
 	void ARDrone2_Control::processNavdata( const struct navdata &hdr )
 	{
 		ros::NodeHandle nh = getNodeHandle( );
 
-		if( hdr.ardrone_state & ARDRONE_NAVDATA_BOOTSTRAP )
+		if( hdr.ardrone_state & ARDRONE_NAVDATA_BOOTSTRAP || sequence < 1 )
 		{
+			NODELET_INFO( "ARDrone2_Control: Handshake complete - Connected" );
 			NODELET_DEBUG( "ARDrone2_Control: Drone is in boostrap - sending config" );
 			if( !sendConfig( ) )
 			{
 				NODELET_WARN( "ARDrone2_Control: Failed to send config" );
 			}
+
+			NODELET_DEBUG( "ARDrone2_Control: Config has changed, updating cache" );
+			boost::thread( &ARDrone2_Control::delayedFetchConfig, this );
 		}
 		else if( hdr.ardrone_state & ARDRONE_COMMAND_MASK )
 		{
@@ -379,6 +406,11 @@ namespace smd_ardrone2
 			{
 				NODELET_WARN( "ARDrone2_Control: Failed to send config ack" );
 			}
+		}
+		if( hdr.ardrone_state & ARDRONE_COM_WATCHDOG_MASK )
+		{
+			NODELET_DEBUG_THROTTLE( 2, "ARDrone2_Control: Communication Watchdog Expired" );
+			sendWatchdogReset( );
 		}
 
 		if( !twist_sub )
@@ -411,6 +443,8 @@ namespace smd_ardrone2
 
 	void ARDrone2_Control::processNavdataOptions( const std::vector<struct navdata_option> &opts )
 	{
+		sensor_msgs::ImuPtr imu_msg;
+
 		for( unsigned int i = 0; i < opts.size( ) - 1; i++ )
 		{
 			switch( opts[i].tag )
@@ -418,16 +452,17 @@ namespace smd_ardrone2
 				case NAVDATA_DEMO_TAG:
 					{
 						{
-							sensor_msgs::ImuPtr msg( new sensor_msgs::Imu );
+							if( !imu_msg )
+							{
+								imu_msg = sensor_msgs::ImuPtr( new sensor_msgs::Imu );
+								imu_msg->header.stamp = ros::Time::now( );
+								imu_msg->header.frame_id = "imu";
+							}
 
-							msg->header.stamp = ros::Time::now( );
-							msg->header.frame_id = "imu";
-
-							msg->orientation = tf::createQuaternionMsgFromRollPitchYaw(
+							imu_msg->orientation = tf::createQuaternionMsgFromRollPitchYaw(
 								*(float *)&opts[i].data.demo_payload.phi / 1000.0 * M_PI / 180,
 								-*(float *)&opts[i].data.demo_payload.theta / 1000.0 * M_PI / 180,
 								-*(float *)&opts[i].data.demo_payload.psi / 1000.0 * M_PI / 180);
-							imu_pub.publish( msg );
 						}
 						{
 							sensor_msgs::RangePtr msg( new sensor_msgs::Range );
@@ -454,19 +489,61 @@ namespace smd_ardrone2
 
 							twist_pub.publish( msg );
 						}
+						{
+							//ROS_INFO_THROTTLE( 2, "Battery Percent: %u%%", opts[i].data.demo_payload.vbat_flying_percentage );
+						}
 					}
 					break;
 				case NAVDATA_RAW_MEASURES_TAG:
+					{
+						if( have_config )
+						{
+							if( !imu_msg )
+							{
+								imu_msg = sensor_msgs::ImuPtr( new sensor_msgs::Imu );
+								imu_msg->header.stamp = ros::Time::now( );
+								imu_msg->header.frame_id = "imu";
+							}
+
+							imu_msg->angular_velocity.x = ( opts[i].data.raw_measures_payload.raw_gyros[0] + gyros_offset[0] ) * gyros_gains[0];
+							imu_msg->angular_velocity.y = ( opts[i].data.raw_measures_payload.raw_gyros[1] + gyros_offset[1] ) * -gyros_gains[1];
+							imu_msg->angular_velocity.z = ( opts[i].data.raw_measures_payload.raw_gyros[2] + gyros_offset[2] ) * -gyros_gains[2];
+
+							//const float tmp_accel_x = ( opts[i].data.raw_measures_payload.raw_accs[0] - accs_offset[0] );
+							//const float tmp_accel_y = ( opts[i].data.raw_measures_payload.raw_accs[1] - accs_offset[1] );
+							//const float tmp_accel_z = ( opts[i].data.raw_measures_payload.raw_accs[2] - accs_offset[2] );
+							const float tmp_accel_x = opts[i].data.raw_measures_payload.raw_accs[0];
+							const float tmp_accel_y = opts[i].data.raw_measures_payload.raw_accs[1];
+							const float tmp_accel_z = opts[i].data.raw_measures_payload.raw_accs[2];
+							//imu_msg->linear_acceleration.x = accs_gains[0][0] * tmp_accel_x + accs_gains[1][0] * tmp_accel_y + accs_gains[2][0] * tmp_accel_z + accs_offset[0];
+							//imu_msg->linear_acceleration.y = accs_gains[0][1] * tmp_accel_x + accs_gains[1][1] * tmp_accel_y + accs_gains[2][1] * tmp_accel_z + accs_offset[1];
+							//imu_msg->linear_acceleration.z = accs_gains[0][2] * tmp_accel_x + accs_gains[1][2] * tmp_accel_y + accs_gains[2][2] * tmp_accel_z + accs_offset[2];
+							imu_msg->linear_acceleration.x = ( accs_gains[0][0] * tmp_accel_x + accs_gains[0][1] * tmp_accel_y + accs_gains[0][2] * tmp_accel_z + accs_offset[0] ) / 98.8;
+							imu_msg->linear_acceleration.y = ( accs_gains[1][0] * tmp_accel_x + accs_gains[1][1] * tmp_accel_y + accs_gains[1][2] * tmp_accel_z + accs_offset[1] ) / -98.8;
+							imu_msg->linear_acceleration.z = ( accs_gains[2][0] * tmp_accel_x + accs_gains[2][1] * tmp_accel_y + accs_gains[2][2] * tmp_accel_z + accs_offset[2] ) / -98.8;
+							//imu_msg->linear_acceleration.x = tmp_accel_x;
+							//imu_msg->linear_acceleration.y = tmp_accel_y;
+							//imu_msg->linear_acceleration.z = tmp_accel_z;
+
+						}
+
+					}
+					{
+						//ROS_INFO_THROTTLE( 2, "Battery Voltage: %2.3fv", opts[i].data.raw_measures_payload.vbat_raw / 1000.0 );
+					}
 					break;
-				case NAVDATA_PHYS_MEASURES_TAG:
-					break;
+				//case NAVDATA_PHYS_MEASURES_TAG:
+				//	break;
 				case NAVDATA_VISION_DETECT_TAG:
 					break;
 				default:
-					NODELET_WARN( "ARDrone2_Control: Unknown navdata option #%d", opts[i].tag );
+					NODELET_WARN_THROTTLE( 10, "ARDrone2_Control: Unknown navdata option #%d", opts[i].tag );
 					break;
 			}
 		}
+
+		if( imu_msg )
+			imu_pub.publish( imu_msg );
 	}
 
 	void ARDrone2_Control::TwistCB( const geometry_msgs::TwistPtr &msg )
@@ -562,8 +639,11 @@ namespace smd_ardrone2
 
 				return true;
 			}
-			global_send.unlock( );
-			global_config.unlock( );
+			else
+			{
+				global_send.unlock( );
+				global_config.unlock( );
+			}
 		}
 		return false;
 	}
@@ -589,8 +669,11 @@ namespace smd_ardrone2
 
 				return true;
 			}
-			global_send.unlock( );
-			global_config.unlock( );
+			else
+			{
+				global_send.unlock( );
+				global_config.unlock( );
+			}
 		}
 		return false;
 	}
@@ -614,13 +697,28 @@ namespace smd_ardrone2
 
 				return true;
 			}
-			global_send.unlock( );
-			global_config.unlock( );
+			else
+			{
+				global_send.unlock( );
+				global_config.unlock( );
+			}
 		}
 		return false;
 	}
 
 	bool ARDrone2_Control::requestConfig( smd_ardrone2::DroneConfig::Request &, smd_ardrone2::DroneConfig::Response &ret_msg )
+	{
+		return fetchConfig( ret_msg.cfg );
+	}
+
+	void ARDrone2_Control::delayedFetchConfig( )
+	{
+		std::string tmp;
+		boost::this_thread::sleep( boost::posix_time::seconds( 2 ) );
+		for( unsigned char i = 0; i < 5 && fetchConfig( tmp ); i++ );
+	}
+
+	bool ARDrone2_Control::fetchConfig( std::string &configuration )
 	{
 		NODELET_DEBUG( "ARDrone2_Control: Connecting to configuration port" );
 
@@ -713,20 +811,53 @@ namespace smd_ardrone2
 				{
 					NODELET_WARN( "ARDrone2_Control: Timeout receiving configuration" );
 					close( sockfd_cfg );
+					global_config.unlock( );
 					return false;
 				}
-				ret_msg.cfg = cfg;
+				configuration = cfg;
 
 				global_config.unlock( );
 
 				close( sockfd_cfg );
 
-				return true;
+				return parseConfig( configuration );
 			}
-			global_send.unlock( );
-			global_config.unlock( );
+			else
+			{
+				global_send.unlock( );
+				global_config.unlock( );
+			}
 		}
-		return false;
+
 		close( sockfd_cfg );
+
+		return false;
+	}
+
+	bool ARDrone2_Control::parseConfig( const std::string &configuration )
+	{
+		std::stringstream conf( configuration );
+		std::string key;
+		std::string val;
+
+		while( getline( conf, key, '=' ) && key.length( ) && getline( conf, val ) )
+		{
+			key.erase( key.find_last_not_of( " \n\r\t" ) + 1 );
+			val.erase( 0, val.find_first_not_of( " \n\r\t" ) );
+			if( key == "control:accs_offset" )
+				sscanf( val.c_str( ), " {%f%f%f}", &accs_offset[0], &accs_offset[1], &accs_offset[2] );
+			else if( key == "control:accs_gains" )
+				sscanf( val.c_str( ), " {%f%f%f%f%f%f%f%f%f}", &accs_gains[0][0], &accs_gains[0][1],
+					&accs_gains[0][2], &accs_gains[1][0], &accs_gains[1][1], &accs_gains[1][2],
+					&accs_gains[2][0], &accs_gains[2][1], &accs_gains[2][2] );
+			else if( key == "control:gyros_offset" )
+				sscanf( val.c_str( ), " {%f%f%f}", &gyros_offset[0], &gyros_offset[1], &gyros_offset[2] );
+			else if( key == "control:gyros_gains" )
+				sscanf( val.c_str( ), " {%f%f%f}", &gyros_gains[0], &gyros_gains[1], &gyros_gains[2] );
+		}
+
+		have_config = true;
+
+		return true;
 	}
 }

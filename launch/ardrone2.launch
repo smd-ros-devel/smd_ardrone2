@@ -5,7 +5,7 @@
   <group ns="/$(env ROBOT)">
     <node pkg="nodelet" type="nodelet"
      name="ardrone2_manager" args="manager"
-     respawn="true"/>
+     output="screen" respawn="true"/>
 
     <node pkg="nodelet" type="nodelet"
      name="smd_ardrone2_control" output="screen" respawn="true"

@@ -87,6 +87,25 @@ namespace smd_ardrone2
 		NAVDATA_CKS_TAG = 0xFFFF
 	};
 
+	enum video_codec_type
+	{
+		NULL_CODEC = 0,
+		UVLC_CODEC = 0x20, // codec_type value is used for START_CODE
+		MJPEG_CODEC, // not used
+		P263_CODEC, // not used
+		P264_CODEC = 0x40,
+		MP4_360P_CODEC = 0x80,
+		H264_360P_CODEC = 0x81,
+		MP4_360P_H264_720P_CODEC = 0x82,
+		H264_720P_CODEC = 0x83,
+		MP4_360P_SLRS_CODEC = 0x84,
+		H264_360P_SLRS_CODEC = 0x85,
+		H264_720P_SLRS_CODEC = 0x86,
+		H264_AUTO_RESIZE_CODEC = 0x87, // resolution is automatically adjusted according to bitrate
+		MP4_360P_H264_360P_CODEC = 0x88,
+
+	};
+
 	const int32_t MAYDAY_TIMEOUT[] = {
 		1000,  // ARDRONE_ANIM_PHI_M30_DEG
 		1000,  // ARDRONE_ANIM_PHI_30_DEG
@@ -161,7 +180,7 @@ namespace smd_ardrone2
 			struct navdata_raw_measures
 			{
 				// +12 bytes
-				uint16_t raw_accs[3];    // filtered accelerometers
+				int16_t raw_accs[3];    // filtered accelerometers
 				int16_t raw_gyros[3];  // filtered gyrometers
 				int16_t raw_gyros_110[2];     // gyrometers  x/y 110 deg/s
 				uint32_t vbat_raw;             // battery voltage raw (mV)
@@ -521,7 +540,10 @@ namespace smd_ardrone2
 		bool LandCB( std_srvs::Empty::Request &, std_srvs::Empty::Response & );
 		bool TrimCB( std_srvs::Empty::Request &, std_srvs::Empty::Response & );
 		bool ResetCB( std_srvs::Empty::Request &, std_srvs::Empty::Response & );
+		void delayedFetchConfig( );
+		bool fetchConfig( std::string &configuration );
 		bool requestConfig( smd_ardrone2::DroneConfig::Request &, smd_ardrone2::DroneConfig::Response & );
+		bool parseConfig( const std::string &configuration );
 		bool LEDAnimCB( smd_ardrone2::DroneLEDAnimate::Request &, smd_ardrone2::DroneLEDAnimate::Response & );
 		bool AnimCB( smd_ardrone2::DroneAnimate::Request &, smd_ardrone2::DroneAnimate::Response & );
 		bool SetCamCB( smd_ardrone2::DroneSetCam::Request &, smd_ardrone2::DroneSetCam::Response & );
@@ -531,6 +553,7 @@ namespace smd_ardrone2
 		bool sendWake( );
 		bool sendConfig( );
 		bool sendConfigAck( );
+		bool sendWatchdogReset( );
 		void dumpHeader( const struct navdata *hdr ) const;
 
 		int sockfd_in;
@@ -538,8 +561,15 @@ namespace smd_ardrone2
 		std::string sockaddr;
 		double sockto;
 		double sockcool;
+		double altitude_max;
 		long unsigned int sequence;
 		struct navdata last_hdr;
+
+		bool have_config;
+		float accs_offset[3];
+		float accs_gains[3][3];
+		float gyros_offset[3];
+		float gyros_gains[3];
 
 		boost::thread spin_thread;
 		boost::mutex global_send;
